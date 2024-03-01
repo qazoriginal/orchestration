@@ -1,0 +1,75 @@
+stages:
+  - test
+  - publish
+  - deploy
+
+
+lint:
+  stage: test
+  image: node:18.17.1-alpine
+  before_script:
+    - npm install
+  script:
+    - npm run lint
+
+
+test:
+  stage: test
+  image: node:18.17.1-alpine
+  coverage: /All files[^|]*\|[^|]*\s+([\d\.]+)/
+  services:
+    - name: postgres:15.4-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: todo-test
+    POSTGRES_USER: todo
+    POSTGRES_PASSWORD: todo
+    DATABASE_URL: postgresql://todo:todo@postgres:5432/todo-test?schema=public
+  before_script:
+    - apk add openssl zlib libgcc
+    - npm install
+    - npm install -g prisma
+  script:
+    - npm run test
+
+
+publish:
+  stage: publish
+  image: docker:stable
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+  after_script:
+    - docker logout $CI_REGISTRY
+  rules:
+     - if: $CI_COMMIT_BRANCH == "main"
+
+
+deploy:
+  stage: deploy
+  image: docker:stable
+  variables:
+    DATABASE_URL: postgresql://$DB_USER:$DB_PASSWORD@postgres:5432/$DB_NAME?schema=public
+  before_script:
+    - apk add openssh
+    - eval $(ssh-agent -s)
+    #- echo "$SSH_PRIVATE_KEY" | ssh-add -
+    - chmod 400 "$SSH_PRIVATE_KEY"
+    - ssh-add "$SSH_PRIVATE_KEY"
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - cp "$SSH_KNOWN_HOSTS" ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    - docker context create production --docker "host=ssh://$SERVER_USER@$SERVER_ADDR"
+    - docker context use production
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+    - docker run --rm --network=todo -e DATABASE_URL="$DATABASE_URL" $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME npm run migrate deploy
+    - docker rm -f todo || true
+    - docker run -d --name=todo --network=todo --restart=unless-stopped -e DATABASE_URL="$DATABASE_URL" -p 80:3000 $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+  after_script:
+    - docker logout $CI_REGISTRY
+    - docker context rm -f production

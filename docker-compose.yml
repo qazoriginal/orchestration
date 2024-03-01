@@ -1,0 +1,23 @@
+version: "3"
+
+services:
+  postgres:
+    image: postgres:15.4-alpine
+    container_name: postgres
+    networks:
+      - todo
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: MYSECRETPASSWORD
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  postgres:
+
+networks:
+  todo:
+    external: true

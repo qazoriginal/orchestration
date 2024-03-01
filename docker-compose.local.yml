@@ -1,0 +1,31 @@
+---
+version: "3.8"
+
+services:
+  todo:
+    container_name: todo
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://todo:TODOPASSWORD@postgres:5432/todo?schema=public
+    ports:
+      - 3000:3000
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15.4-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: todo
+      POSTGRES_PASSWORD: TODOPASSWORD
+      POSTGRES_DB: todo
+      DATABASE_URL: postgresql://todo:TODOPASSWORD@postgres:5432/todo?schema=public
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres:
